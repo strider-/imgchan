@@ -12,10 +12,13 @@ import (
 	"time"
 )
 
+type ThreadResult struct{ Posts []Post }
+type PageResult struct{ Threads []ThreadResult }
+
 var lastApiCall time.Time
 
 func Boards() ([]Board, error) {
-	url := "http://api.4chan.org/boards.json"
+	url := "https://api.4chan.org/boards.json"
 	type boardResult struct{ Boards []Board }
 	var result boardResult
 	err := fetchAndUnmarshal(url, &result)
@@ -23,22 +26,28 @@ func Boards() ([]Board, error) {
 }
 
 func Catalog(board string) ([]Page, error) {
-	url := fmt.Sprintf("http://api.4chan.org/%s/catalog.json", sanitizeBoard(board))
+	url := fmt.Sprintf("https://api.4chan.org/%s/catalog.json", sanitizeBoard(board))
 	var pages []Page
 	err := fetchAndUnmarshal(url, &pages)
 	return pages, err
 }
 
-func Thread(board string, postNumber int64) ([]Post, error) {
-	url := fmt.Sprintf("http://api.4chan.org/%s/res/%d.json", sanitizeBoard(board), postNumber)
-	type threadResult struct{ Posts []Post }
-	var result threadResult
+func Thread(board string, postNumber int64) (ThreadResult, error) {
+	url := fmt.Sprintf("https://api.4chan.org/%s/res/%d.json", sanitizeBoard(board), postNumber)
+	var result ThreadResult
 	err := fetchAndUnmarshal(url, &result)
-	return result.Posts, err
+	return result, err
+}
+
+func BoardPage(board string, page int) (PageResult, error) {
+	url := fmt.Sprintf("https://api.4chan.org/%s/%d.json", sanitizeBoard(board), page)
+	var result PageResult
+	err := fetchAndUnmarshal(url, &result)
+	return result, err
 }
 
 func Image(board string, post Post) ([]byte, error) {
-	url := fmt.Sprintf("http://images.4chan.org/%s/src/%d%s", sanitizeBoard(board), post.RenamedFilename, post.Ext)
+	url := fmt.Sprintf("https://images.4chan.org/%s/src/%d%s", sanitizeBoard(board), post.RenamedFilename, post.Ext)
 	resp, err := fetch(url)
 	if err != nil {
 		return nil, err
