@@ -18,7 +18,7 @@ type PageResult struct{ Threads []ThreadResult }
 var lastApiCall time.Time
 
 func Boards() ([]Board, error) {
-	url := "https://api.4chan.org/boards.json"
+	url := apiBoardUrl
 	type boardResult struct{ Boards []Board }
 	var result boardResult
 	err := fetchAndUnmarshal(url, &result)
@@ -26,57 +26,83 @@ func Boards() ([]Board, error) {
 }
 
 func Catalog(board string) ([]Page, error) {
-	url := fmt.Sprintf("https://api.4chan.org/%s/catalog.json", sanitizeBoard(board))
+	b := sanitizeBoard(board)
+	url := fmt.Sprintf(apiCatalogUrl, b)
 	var pages []Page
 	err := fetchAndUnmarshal(url, &pages)
+
+	if err == nil {
+		for i := range pages {
+			for j := range pages[i].Threads {
+				pages[i].Threads[j].Board = b
+			}
+		}
+	}
+
 	return pages, err
 }
 
 func Thread(board string, postNumber int64) (ThreadResult, error) {
-	url := fmt.Sprintf("https://api.4chan.org/%s/res/%d.json", sanitizeBoard(board), postNumber)
+	url := fmt.Sprintf(apiThreadUrl, sanitizeBoard(board), postNumber)
 	var result ThreadResult
 	err := fetchAndUnmarshal(url, &result)
+
+	if err == nil {
+		for i := range result.Posts {
+			result.Posts[i].Board = board
+		}
+	}
+
 	return result, err
 }
 
 func BoardPage(board string, page int) (PageResult, error) {
-	url := fmt.Sprintf("https://api.4chan.org/%s/%d.json", sanitizeBoard(board), page)
+	b := sanitizeBoard(board)
+	url := fmt.Sprintf(apiBoardPageUrl, b, page)
 	var result PageResult
 	err := fetchAndUnmarshal(url, &result)
+
+	if err == nil {
+		for i := range result.Threads {
+			for j := range result.Threads[i].Posts {
+				result.Threads[i].Posts[j].Board = b
+			}
+		}
+	}
+
 	return result, err
 }
 
-func Image(board string, post Post) ([]byte, error) {
-	url := fmt.Sprintf("https://images.4chan.org/%s/src/%d%s", sanitizeBoard(board), post.RenamedFilename, post.Ext)
-	resp, err := fetch(url)
-	if err != nil {
-		return nil, err
+func Image(post Post) ([]byte, error) {
+	if !post.HasAttachment() {
+		return nil, errors.New(errNoImage)
 	}
 
-	defer resp.Body.Close()
+	return fetchImage(post.FullImageUrl())
+}
 
-	img, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+func Thumbnail(post Post) ([]byte, error) {
+	if !post.HasAttachment() {
+		return nil, errors.New(errNoImage)
 	}
 
-	return img, nil
+	return fetchImage(post.ThumbnailUrl())
 }
 
 func ParseThreadUrl(url string) (string, int64, error) {
-	rx, err := regexp.Compile(`/(?P<board>[^/])/res/(?P<thread>\d+)$`)
+	rx, err := regexp.Compile(rxThreadUrl)
 	if err != nil {
 		return "", 0, err
 	}
 
 	matches := rx.FindStringSubmatch(url)
 	if len(matches) != 3 {
-		return "", 0, errors.New("invalid 4chan url")
+		return "", 0, errors.New(errInvalidUrl)
 	}
 
 	thread, err := strconv.ParseInt(matches[2], 10, 64)
 	if err != nil {
-		return "", 0, errors.New("invalid 4chan thread id")
+		return "", 0, errors.New(errInvalidThreadId)
 	}
 
 	return matches[1], thread, nil
@@ -91,7 +117,7 @@ func fetchAndUnmarshal(url string, t interface{}) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
-		return errors.New("specified resource is no longer available!")
+		return errors.New(err404)
 	}
 
 	contents, err := ioutil.ReadAll(resp.Body)
@@ -105,6 +131,22 @@ func fetchAndUnmarshal(url string, t interface{}) error {
 	}
 
 	return nil
+}
+
+func fetchImage(imageUrl string) ([]byte, error) {
+	resp, err := fetch(imageUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	img, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return img, nil
 }
 
 func fetch(url string) (*http.Response, error) {
