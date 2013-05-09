@@ -18,15 +18,14 @@ type PageResult struct{ Threads []ThreadResult }
 var lastApiCall time.Time
 
 func Boards() ([]Board, error) {
-	url := apiBoardUrl
 	type boardResult struct{ Boards []Board }
 	var result boardResult
-	err := fetchAndUnmarshal(url, &result)
+	err := fetchAndUnmarshal(apiBoardUrl, &result)
 	return result.Boards, err
 }
 
 func Catalog(board string) ([]Page, error) {
-	b := sanitizeBoard(board)
+	b := removeSlashes(board)
 	url := fmt.Sprintf(apiCatalogUrl, b)
 	var pages []Page
 	err := fetchAndUnmarshal(url, &pages)
@@ -43,13 +42,14 @@ func Catalog(board string) ([]Page, error) {
 }
 
 func Thread(board string, postNumber int64) (ThreadResult, error) {
-	url := fmt.Sprintf(apiThreadUrl, sanitizeBoard(board), postNumber)
+	b := removeSlashes(board)
+	url := fmt.Sprintf(apiThreadUrl, b, postNumber)
 	var result ThreadResult
 	err := fetchAndUnmarshal(url, &result)
 
 	if err == nil {
 		for i := range result.Posts {
-			result.Posts[i].Board = board
+			result.Posts[i].Board = b
 		}
 	}
 
@@ -57,7 +57,7 @@ func Thread(board string, postNumber int64) (ThreadResult, error) {
 }
 
 func BoardPage(board string, page int) (PageResult, error) {
-	b := sanitizeBoard(board)
+	b := removeSlashes(board)
 	url := fmt.Sprintf(apiBoardPageUrl, b, page)
 	var result PageResult
 	err := fetchAndUnmarshal(url, &result)
@@ -160,6 +160,6 @@ func fetch(url string) (*http.Response, error) {
 	return http.Get(url)
 }
 
-func sanitizeBoard(board string) string {
+func removeSlashes(board string) string {
 	return strings.Replace(strings.Replace(board, "/", "", -1), "\\", "", -1)
 }
